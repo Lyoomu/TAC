@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"fmt"
-	"strings"
 )
 
 func NewTLSConfig(trustedFingerprint string) (*tls.Config, error) {
@@ -46,12 +45,4 @@ func GetFingerprint(state tls.ConnectionState) string {
 	cert := state.PeerCertificates[0]
 	hash := sha256.Sum256(cert.Raw)
 	return hex.EncodeToString(hash[:])
-}
-
-func FingerprintFromString(s string) string {
-
-	s = strings.ReplaceAll(s, " ", "")
-	s = strings.ReplaceAll(s, ":", "")
-	s = strings.ToLower(s)
-	return s
 }

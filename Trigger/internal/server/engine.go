@@ -18,7 +18,6 @@ var (
 	ErrServerNotFound    = errors.New("server not found")
 	ErrServerExists      = errors.New("server already exists")
 	ErrInvalidAddress    = errors.New("invalid server address")
-	ErrInvalidName       = errors.New("invalid server name")
 	ErrDisplayNameExists = errors.New("display name already exists")
 )
 
@@ -266,23 +265,6 @@ func (e *Engine) GetClient(address string) (*Client, error) {
 	return c, nil
 }
 
-func (e *Engine) GetClientByDisplayName(name string) (*Client, error) {
-	e.mu.RLock()
-	var address string
-	for _, s := range e.servers {
-		if s.DisplayName == name {
-			address = s.Address
-			break
-		}
-	}
-	e.mu.RUnlock()
-
-	if address == "" {
-		return nil, ErrServerNotFound
-	}
-	return e.GetClient(address)
-}
-
 func (e *Engine) CloseAll() {
 	e.poolMu.Lock()
 	defer e.poolMu.Unlock()
@@ -306,18 +288,6 @@ func (e *Engine) LoadRole(address string, role model.LoadedRole) error {
 	})
 }
 
-func (e *Engine) UnloadRole(address, roleName string) error {
-	return e.Update(address, func(s *model.ServerConnection) {
-		var filtered []model.LoadedRole
-		for _, r := range s.Roles {
-			if r.RoleName != roleName {
-				filtered = append(filtered, r)
-			}
-		}
-		s.Roles = filtered
-	})
-}
-
 func (e *Engine) GetLoadedRoles() []model.LoadedRole {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
@@ -329,12 +299,6 @@ func (e *Engine) GetLoadedRoles() []model.LoadedRole {
 		}
 	}
 	return result
-}
-
-func (e *Engine) SetTrustedFingerprint(address, fingerprint string) error {
-	return e.Update(address, func(s *model.ServerConnection) {
-		s.TrustedFingerprint = fingerprint
-	})
 }
 
 func (e *Engine) saveUnsafe() error {

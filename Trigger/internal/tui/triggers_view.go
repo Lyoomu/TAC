@@ -440,20 +440,6 @@ func (v *triggersViewModel) handleFormDone() tea.Cmd {
 	return nil
 }
 
-func splitIDs(s string) []string {
-	if s == "" {
-		return nil
-	}
-	var ids []string
-	for _, id := range strings.Split(s, ",") {
-		id = strings.TrimSpace(id)
-		if id != "" {
-			ids = append(ids, id)
-		}
-	}
-	return ids
-}
-
 func triggerFieldsForType(triggerType string, t *triggerItem, events []eventItem, selectedEventIDs []string) []formField {
 	fields := []formField{
 		{label: "Name", placeholder: "trigger name", value: triggerValue(t, "name"), required: true},

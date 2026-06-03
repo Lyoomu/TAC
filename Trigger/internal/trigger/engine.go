@@ -20,7 +20,6 @@ var (
 	ErrEventNotFound   = errors.New("event not found")
 	ErrEventExists     = errors.New("event already exists")
 	ErrInvalidType     = errors.New("invalid trigger type")
-	ErrNoWorkspace     = errors.New("no active workspace")
 	ErrEnvPresetNotFound = errors.New("env preset not found")
 	ErrEnvPresetExists   = errors.New("env preset already exists")
 	ErrInvalidEnvPreset  = errors.New("invalid env preset name")
@@ -474,54 +473,6 @@ func (e *Engine) ResolveEventEnv(ev *model.Event) (map[string]string, error) {
 		merged[key] = val
 	}
 	return merged, nil
-}
-
-func (e *Engine) BindEvent(triggerID, eventID string) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	t, exists := e.triggers[triggerID]
-	if !exists {
-		return ErrTriggerNotFound
-	}
-	if _, exists := e.events[eventID]; !exists {
-		return ErrEventNotFound
-	}
-
-	for _, eid := range t.EventIDs {
-		if eid == eventID {
-			return nil
-		}
-	}
-
-	t.EventIDs = append(t.EventIDs, eventID)
-	t.UpdatedAt = time.Now()
-	return e.saveTrigger(t)
-}
-
-func (e *Engine) UnbindEvent(triggerID, eventID string) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	t, exists := e.triggers[triggerID]
-	if !exists {
-		return ErrTriggerNotFound
-	}
-
-	var filtered []string
-	for _, eid := range t.EventIDs {
-		if eid != eventID {
-			filtered = append(filtered, eid)
-		}
-	}
-
-	if len(filtered) == len(t.EventIDs) {
-		return nil
-	}
-
-	t.EventIDs = filtered
-	t.UpdatedAt = time.Now()
-	return e.saveTrigger(t)
 }
 
 func (e *Engine) GetTriggerEvents(triggerID string) ([]model.Event, error) {

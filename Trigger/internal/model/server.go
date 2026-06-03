@@ -37,7 +37,3 @@ type ToolInfo struct {
 	LocalPath           string    `yaml:"local_path" json:"local_path"` // 本地存储路径
 	DownloadedAt        time.Time `yaml:"downloaded_at" json:"downloaded_at"`
 }
-
-func (s *ServerConnection) Identity() string {
-	return s.Address
-}

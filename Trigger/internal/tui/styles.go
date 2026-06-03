@@ -88,13 +88,6 @@ var (
 				Foreground(successColor).
 				Bold(true)
 
-	chatToolStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(accentColor).
-			Padding(0, 1).
-			MarginTop(1).
-			MarginBottom(1)
-
 	chatInputStyle = lipgloss.NewStyle().
 			BorderStyle(lipgloss.NormalBorder()).
 			BorderTop(true).

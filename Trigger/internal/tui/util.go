@@ -1,10 +1,6 @@
 package tui
 
-import (
-	"strings"
-
-	"github.com/charmbracelet/lipgloss"
-)
+import "strings"
 
 func truncate(s string, max int) string {
 	if len(s) <= max {
@@ -37,42 +33,10 @@ func padToHeight(content string, height int) string {
 	return strings.Join(lines, "\n")
 }
 
-// countLines returns the number of visual lines in a rendered string.
-func countLines(s string) int {
-	if s == "" {
-		return 0
-	}
-	return strings.Count(s, "\n") + 1
-}
-
-// clamp constrains v to the range [lo, hi].
-func clamp(v, lo, hi int) int {
-	if v < lo {
-		return lo
-	}
-	if v > hi {
-		return hi
-	}
-	return v
-}
-
-// maxInt returns the larger of a, b.
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 // minInt returns the smaller of a, b.
 func minInt(a, b int) int {
 	if a < b {
 		return a
 	}
 	return b
-}
-
-// renderLineCount returns how many visual lines a lipgloss-rendered string occupies.
-func renderLineCount(s string) int {
-	return lipgloss.Height(s)
 }

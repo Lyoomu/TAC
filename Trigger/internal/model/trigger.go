@@ -56,11 +56,3 @@ type Event struct {
 	CreatedAt time.Time `yaml:"created_at" json:"created_at"`
 	UpdatedAt time.Time `yaml:"updated_at" json:"updated_at"`
 }
-
-type TriggerState struct {
-	TriggerID string    `yaml:"trigger_id" json:"trigger_id"`
-	Running   bool      `yaml:"running" json:"running"`
-	LastRun   time.Time `yaml:"last_run" json:"last_run"`
-	NextRun   time.Time `yaml:"next_run" json:"next_run"`
-	RunCount  int       `yaml:"run_count" json:"run_count"`
-}
