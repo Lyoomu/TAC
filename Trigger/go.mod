@@ -16,6 +16,8 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
+replace github.com/Lyoomu/TAC/proto => ../proto
+
 require (
 	github.com/alecthomas/chroma/v2 v2.20.0 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
