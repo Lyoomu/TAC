@@ -11,20 +11,27 @@ import (
 )
 
 type componentsViewModel struct {
-	ctx        *AppContext
-	width      int
-	height     int
-	items      []datamodel.Component
-	cursor     int
-	form       *formModel
-	selector   *selectorModel
-	detailMode bool
+	ctx              *AppContext
+	width            int
+	height           int
+	items            []datamodel.Component
+	cursor           int
+	form             *formModel
+	selector         *selectorModel
+	conflictResolver *conflictResolverModel
+	detailMode       bool
 
-	importItems []datamodel.Component
+	importItems   []datamodel.Component
+	pendingImport []datamodel.Component
 }
 
 func newComponentsViewModel(ctx *AppContext) *componentsViewModel {
-	return &componentsViewModel{ctx: ctx, form: newFormModel(), selector: newSelectorModel()}
+	return &componentsViewModel{
+		ctx:              ctx,
+		form:             newFormModel(),
+		selector:         newSelectorModel(),
+		conflictResolver: newConflictResolverModel(),
+	}
 }
 
 func (v *componentsViewModel) setSize(w, h int) {
@@ -49,6 +56,18 @@ func (v *componentsViewModel) Update(msg tea.Msg) tea.Cmd {
 			}
 		}
 	case tea.KeyMsg:
+
+		if v.conflictResolver.IsActive() {
+			done, cancelled := v.conflictResolver.Update(msg)
+			if cancelled {
+				v.pendingImport = nil
+				return nil
+			}
+			if done {
+				return v.executeComponentImport()
+			}
+			return nil
+		}
 
 		if v.form.IsActive() {
 			done, cancelled := v.form.Update(msg)
@@ -133,7 +152,7 @@ func (v *componentsViewModel) Update(msg tea.Msg) tea.Cmd {
 				return func() tea.Msg { return statusMsg("Scan import failed: " + err.Error()) }
 			}
 			if len(items) == 0 {
-				return func() tea.Msg { return statusMsg("No component files found in Input/Components") }
+				return func() tea.Msg { return statusMsg("No component files found in Import/Components") }
 			}
 			v.importItems = items
 			var names []string
@@ -179,12 +198,103 @@ func (v *componentsViewModel) handleSelectorDone() tea.Cmd {
 		v.importItems = nil
 		return func() tea.Msg { return statusMsg("ComponentEngine not available") }
 	}
-	var imported int
+
+	var toImport []datamodel.Component
 	for _, idx := range selected {
-		if idx < 0 || idx >= len(v.importItems) {
-			continue
+		if idx >= 0 && idx < len(v.importItems) {
+			toImport = append(toImport, v.importItems[idx])
 		}
-		c := v.importItems[idx]
+	}
+
+	conflicts := v.detectComponentConflicts(toImport)
+	if len(conflicts) > 0 {
+		v.pendingImport = toImport
+		existingNames := v.buildComponentNameSet()
+		v.conflictResolver.start("Component Import Conflicts", conflicts, existingNames)
+		return nil
+	}
+
+	return v.doImportComponents(toImport)
+}
+
+func (v *componentsViewModel) detectComponentConflicts(toImport []datamodel.Component) []*conflictEntry {
+	existing := make(map[string]datamodel.Component)
+	for _, c := range v.items {
+		existing[c.Name] = c
+	}
+
+	var conflicts []*conflictEntry
+	for _, c := range toImport {
+		if ex, ok := existing[c.Name]; ok {
+			info := fmt.Sprintf("type: %s", ex.Type)
+			conflicts = append(conflicts, &conflictEntry{
+				Name:         c.Name,
+				ResourceType: "component",
+				ExistingInfo: info,
+			})
+		}
+	}
+	return conflicts
+}
+
+func (v *componentsViewModel) buildComponentNameSet() map[string]bool {
+	names := make(map[string]bool)
+	for _, c := range v.items {
+		names[c.Name] = true
+	}
+	return names
+}
+
+func (v *componentsViewModel) executeComponentImport() tea.Cmd {
+	resolved := v.conflictResolver.GetResolved()
+	v.conflictResolver.cancel()
+
+	toImport := v.pendingImport
+	v.pendingImport = nil
+	v.importItems = nil
+
+	var imported, overwritten, renamed, skipped int
+	for _, c := range toImport {
+		if entry, ok := resolved[c.Name]; ok {
+			switch entry.Action {
+			case conflictSkip:
+				skipped++
+				continue
+			case conflictOverwrite:
+				if err := v.ctx.ComponentEngine.Save(&c); err != nil {
+					skipped++
+					continue
+				}
+				overwritten++
+			case conflictRename:
+				c.Name = entry.NewName
+				if err := v.ctx.ComponentEngine.Create(&c); err != nil {
+					skipped++
+					continue
+				}
+				renamed++
+			}
+		} else {
+			if err := v.ctx.ComponentEngine.Create(&c); err != nil {
+				skipped++
+				continue
+			}
+			imported++
+		}
+	}
+
+	if list, err := v.ctx.ComponentEngine.List(); err == nil {
+		v.items = list
+	}
+
+	return func() tea.Msg {
+		return statusMsg(buildImportStatus("component", imported, overwritten, renamed, skipped))
+	}
+}
+
+func (v *componentsViewModel) doImportComponents(toImport []datamodel.Component) tea.Cmd {
+	var imported int
+	for _, c := range toImport {
 		if err := v.ctx.ComponentEngine.Create(&c); err != nil {
 			continue
 		}
@@ -239,6 +349,10 @@ func (v *componentsViewModel) handleFormDone() tea.Cmd {
 }
 
 func (v *componentsViewModel) View() string {
+
+	if v.conflictResolver.IsActive() {
+		return v.conflictResolver.View()
+	}
 
 	if v.selector.IsActive() {
 		return v.selector.View()

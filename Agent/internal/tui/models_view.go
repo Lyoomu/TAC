@@ -11,20 +11,27 @@ import (
 )
 
 type modelsViewModel struct {
-	ctx        *AppContext
-	width      int
-	height     int
-	items      []datamodel.Model
-	cursor     int
-	form       *formModel
-	selector   *selectorModel
-	detailMode bool
+	ctx              *AppContext
+	width            int
+	height           int
+	items            []datamodel.Model
+	cursor           int
+	form             *formModel
+	selector         *selectorModel
+	conflictResolver *conflictResolverModel
+	detailMode       bool
 
-	importItems []datamodel.Model
+	importItems    []datamodel.Model
+	pendingImport  []datamodel.Model
 }
 
 func newModelsViewModel(ctx *AppContext) *modelsViewModel {
-	return &modelsViewModel{ctx: ctx, form: newFormModel(), selector: newSelectorModel()}
+	return &modelsViewModel{
+		ctx:              ctx,
+		form:             newFormModel(),
+		selector:         newSelectorModel(),
+		conflictResolver: newConflictResolverModel(),
+	}
 }
 
 func (v *modelsViewModel) setSize(w, h int) {
@@ -49,6 +56,18 @@ func (v *modelsViewModel) Update(msg tea.Msg) tea.Cmd {
 			}
 		}
 	case tea.KeyMsg:
+
+		if v.conflictResolver.IsActive() {
+			done, cancelled := v.conflictResolver.Update(msg)
+			if cancelled {
+				v.pendingImport = nil
+				return nil
+			}
+			if done {
+				return v.executeModelImport()
+			}
+			return nil
+		}
 
 		if v.form.IsActive() {
 			done, cancelled := v.form.Update(msg)
@@ -141,7 +160,7 @@ func (v *modelsViewModel) Update(msg tea.Msg) tea.Cmd {
 				return func() tea.Msg { return statusMsg("Scan import failed: " + err.Error()) }
 			}
 			if len(items) == 0 {
-				return func() tea.Msg { return statusMsg("No model files found in Input/Models") }
+				return func() tea.Msg { return statusMsg("No model files found in Import/Models") }
 			}
 			v.importItems = items
 			var names []string
@@ -187,12 +206,103 @@ func (v *modelsViewModel) handleSelectorDone() tea.Cmd {
 		v.importItems = nil
 		return func() tea.Msg { return statusMsg("ModelsEngine not available") }
 	}
-	var imported int
+
+	var toImport []datamodel.Model
 	for _, idx := range selected {
-		if idx < 0 || idx >= len(v.importItems) {
-			continue
+		if idx >= 0 && idx < len(v.importItems) {
+			toImport = append(toImport, v.importItems[idx])
 		}
-		m := v.importItems[idx]
+	}
+
+	conflicts := v.detectModelConflicts(toImport)
+	if len(conflicts) > 0 {
+		v.pendingImport = toImport
+		existingNames := v.buildModelNameSet()
+		v.conflictResolver.start("Model Import Conflicts", conflicts, existingNames)
+		return nil
+	}
+
+	return v.doImportModels(toImport)
+}
+
+func (v *modelsViewModel) detectModelConflicts(toImport []datamodel.Model) []*conflictEntry {
+	existing := make(map[string]datamodel.Model)
+	for _, m := range v.items {
+		existing[m.Name] = m
+	}
+
+	var conflicts []*conflictEntry
+	for _, m := range toImport {
+		if ex, ok := existing[m.Name]; ok {
+			info := fmt.Sprintf("model: %s", ex.Model)
+			conflicts = append(conflicts, &conflictEntry{
+				Name:         m.Name,
+				ResourceType: "model",
+				ExistingInfo: info,
+			})
+		}
+	}
+	return conflicts
+}
+
+func (v *modelsViewModel) buildModelNameSet() map[string]bool {
+	names := make(map[string]bool)
+	for _, m := range v.items {
+		names[m.Name] = true
+	}
+	return names
+}
+
+func (v *modelsViewModel) executeModelImport() tea.Cmd {
+	resolved := v.conflictResolver.GetResolved()
+	v.conflictResolver.cancel()
+
+	toImport := v.pendingImport
+	v.pendingImport = nil
+	v.importItems = nil
+
+	var imported, overwritten, skipped, renamed int
+	for _, m := range toImport {
+		if entry, ok := resolved[m.Name]; ok {
+			switch entry.Action {
+			case conflictSkip:
+				skipped++
+				continue
+			case conflictOverwrite:
+				if err := v.ctx.ModelsEngine.Save(&m); err != nil {
+					skipped++
+					continue
+				}
+				overwritten++
+			case conflictRename:
+				m.Name = entry.NewName
+				if err := v.ctx.ModelsEngine.Create(&m); err != nil {
+					skipped++
+					continue
+				}
+				renamed++
+			}
+		} else {
+			if err := v.ctx.ModelsEngine.Create(&m); err != nil {
+				skipped++
+				continue
+			}
+			imported++
+		}
+	}
+
+	if list, err := v.ctx.ModelsEngine.List(); err == nil {
+		v.items = list
+	}
+
+	return func() tea.Msg {
+		return statusMsg(buildImportStatus("model", imported, overwritten, renamed, skipped))
+	}
+}
+
+func (v *modelsViewModel) doImportModels(toImport []datamodel.Model) tea.Cmd {
+	var imported int
+	for _, m := range toImport {
 		if err := v.ctx.ModelsEngine.Create(&m); err != nil {
 			continue
 		}
@@ -249,6 +359,10 @@ func (v *modelsViewModel) handleFormDone() tea.Cmd {
 }
 
 func (v *modelsViewModel) View() string {
+
+	if v.conflictResolver.IsActive() {
+		return v.conflictResolver.View()
+	}
 
 	if v.selector.IsActive() {
 		return v.selector.View()

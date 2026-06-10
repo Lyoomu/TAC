@@ -13,19 +13,25 @@ import (
 )
 
 type toolsViewModel struct {
-	ctx        *AppContext
-	width      int
-	height     int
-	items      []*datamodel.Tool
-	cursor     int
-	selector   *selectorModel
-	detailMode bool
+	ctx              *AppContext
+	width            int
+	height           int
+	items            []*datamodel.Tool
+	cursor           int
+	selector         *selectorModel
+	conflictResolver *conflictResolverModel
+	detailMode       bool
 
 	importToolEntries []ImportToolEntry
+	pendingImport     []ImportToolEntry
 }
 
 func newToolsViewModel(ctx *AppContext) *toolsViewModel {
-	return &toolsViewModel{ctx: ctx, selector: newSelectorModel()}
+	return &toolsViewModel{
+		ctx:              ctx,
+		selector:         newSelectorModel(),
+		conflictResolver: newConflictResolverModel(),
+	}
 }
 
 func (v *toolsViewModel) setSize(w, h int) {
@@ -48,6 +54,18 @@ func (v *toolsViewModel) Update(msg tea.Msg) tea.Cmd {
 			v.items = v.ctx.ToolEngine.List()
 		}
 	case tea.KeyMsg:
+
+		if v.conflictResolver.IsActive() {
+			done, cancelled := v.conflictResolver.Update(msg)
+			if cancelled {
+				v.pendingImport = nil
+				return nil
+			}
+			if done {
+				return v.executeToolImport()
+			}
+			return nil
+		}
 
 		if v.selector.IsActive() {
 			done, cancelled := v.selector.Update(msg)
@@ -89,7 +107,7 @@ func (v *toolsViewModel) Update(msg tea.Msg) tea.Cmd {
 				return func() tea.Msg { return statusMsg("Scan import failed: " + err.Error()) }
 			}
 			if len(entries) == 0 {
-				return func() tea.Msg { return statusMsg("No tool folders found in Input/Tools") }
+				return func() tea.Msg { return statusMsg("No tool folders found in Import/Tools") }
 			}
 			v.importToolEntries = entries
 			var names []string
@@ -135,19 +153,108 @@ func (v *toolsViewModel) handleSelectorDone() tea.Cmd {
 		v.importToolEntries = nil
 		return func() tea.Msg { return statusMsg("ToolEngine not available") }
 	}
-	var imported int
+
+	var toImport []ImportToolEntry
 	for _, idx := range selected {
-		if idx < 0 || idx >= len(v.importToolEntries) {
-			continue
+		if idx >= 0 && idx < len(v.importToolEntries) {
+			toImport = append(toImport, v.importToolEntries[idx])
 		}
-		entry := v.importToolEntries[idx]
+	}
+
+	conflicts := v.detectToolConflicts(toImport)
+	if len(conflicts) > 0 {
+		v.pendingImport = toImport
+		existingNames := v.buildToolNameSet()
+		v.conflictResolver.start("Tool Import Conflicts", conflicts, existingNames)
+		return nil
+	}
+
+	return v.doImportTools(toImport)
+}
+
+func (v *toolsViewModel) detectToolConflicts(toImport []ImportToolEntry) []*conflictEntry {
+	existing := make(map[string]*datamodel.Tool)
+	for _, t := range v.items {
+		existing[t.Name] = t
+	}
+
+	var conflicts []*conflictEntry
+	for _, entry := range toImport {
+		if t, ok := existing[entry.Config.Name]; ok {
+			info := fmt.Sprintf("version: %s", t.Version)
+			conflicts = append(conflicts, &conflictEntry{
+				Name:         entry.Config.Name,
+				ResourceType: "tool",
+				ExistingInfo: info,
+			})
+		}
+	}
+	return conflicts
+}
+
+func (v *toolsViewModel) buildToolNameSet() map[string]bool {
+	names := make(map[string]bool)
+	for _, t := range v.items {
+		names[t.Name] = true
+	}
+	return names
+}
+
+func (v *toolsViewModel) executeToolImport() tea.Cmd {
+	resolved := v.conflictResolver.GetResolved()
+	v.conflictResolver.cancel()
+
+	toImport := v.pendingImport
+	v.pendingImport = nil
+	v.importToolEntries = nil
+
+	var imported, overwritten, renamed, skipped int
+	for _, entry := range toImport {
+		name := entry.Config.Name
+		if resolvedEntry, ok := resolved[name]; ok {
+			switch resolvedEntry.Action {
+			case conflictSkip:
+				skipped++
+				continue
+			case conflictOverwrite:
+				if err := v.importTool(entry); err != nil {
+					skipped++
+					continue
+				}
+				overwritten++
+			case conflictRename:
+				entry.Config.Name = resolvedEntry.NewName
+				if err := v.importTool(entry); err != nil {
+					skipped++
+					continue
+				}
+				renamed++
+			}
+		} else {
+			if err := v.importTool(entry); err != nil {
+				skipped++
+				continue
+			}
+			imported++
+		}
+	}
+
+	_ = v.ctx.ToolEngine.Register()
+	v.items = v.ctx.ToolEngine.List()
+	return func() tea.Msg {
+		return statusMsg(buildImportStatus("tool", imported, overwritten, renamed, skipped))
+	}
+}
+
+func (v *toolsViewModel) doImportTools(toImport []ImportToolEntry) tea.Cmd {
+	var imported int
+	for _, entry := range toImport {
 		if err := v.importTool(entry); err != nil {
 			continue
 		}
 		imported++
 	}
 	v.importToolEntries = nil
-
 	_ = v.ctx.ToolEngine.Register()
 	v.items = v.ctx.ToolEngine.List()
 	return func() tea.Msg { return statusMsg(fmt.Sprintf("Imported %d tool(s)", imported)) }
@@ -198,6 +305,10 @@ func (v *toolsViewModel) importTool(entry ImportToolEntry) error {
 }
 
 func (v *toolsViewModel) View() string {
+
+	if v.conflictResolver.IsActive() {
+		return v.conflictResolver.View()
+	}
 
 	if v.selector.IsActive() {
 		return v.selector.View()

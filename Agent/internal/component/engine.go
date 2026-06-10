@@ -20,6 +20,7 @@ type Repository interface {
 	Create(c *model.Component) error
 	Update(c *model.Component) error
 	Delete(name string) error
+	Save(c *model.Component) error
 }
 
 type Engine struct {
@@ -113,4 +114,27 @@ func (e *Engine) Delete(name string) error {
 	defer e.mu.Unlock()
 
 	return e.repo.Delete(name)
+}
+
+func (e *Engine) Save(c *model.Component) error {
+	if c == nil {
+		return errors.New("component is nil")
+	}
+	if c.Name == "" {
+		return ErrInvalidName
+	}
+	if c.Type != model.ComponentStatic && c.Type != model.ComponentEmbedded {
+		return errors.New("invalid component type")
+	}
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	now := time.Now()
+	if c.CreatedAt.IsZero() {
+		c.CreatedAt = now
+	}
+	c.UpdatedAt = now
+
+	return e.repo.Save(c)
 }

@@ -74,3 +74,16 @@ func (r *ComponentRepo) Delete(name string) error {
 	_, err := r.db.Exec("DELETE FROM components WHERE name = ?", name)
 	return err
 }
+
+func (r *ComponentRepo) Save(c *model.Component) error {
+	_, err := r.db.Exec(
+		`INSERT INTO components (name, type, content, description, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(name) DO UPDATE SET
+		   type=excluded.type, content=excluded.content,
+		   description=excluded.description, updated_at=excluded.updated_at`,
+		c.Name, c.Type, c.Content, c.Description,
+		c.CreatedAt.Format(time.RFC3339), c.UpdatedAt.Format(time.RFC3339),
+	)
+	return err
+}

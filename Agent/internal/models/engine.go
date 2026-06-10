@@ -20,6 +20,7 @@ type Repository interface {
 	Create(m *model.Model) error
 	Update(m *model.Model) error
 	Delete(name string) error
+	Save(m *model.Model) error
 }
 
 type Engine struct {
@@ -132,4 +133,24 @@ func (e *Engine) Delete(name string) error {
 	defer e.mu.Unlock()
 
 	return e.repo.Delete(name)
+}
+
+func (e *Engine) Save(m *model.Model) error {
+	if m == nil {
+		return errors.New("model is nil")
+	}
+	if m.Name == "" {
+		return ErrInvalidName
+	}
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	now := time.Now()
+	if m.CreatedAt.IsZero() {
+		m.CreatedAt = now
+	}
+	m.UpdatedAt = now
+
+	return e.repo.Save(m)
 }

@@ -22,6 +22,7 @@ type Repository interface {
 	Create(r *model.Role) error
 	Update(r *model.Role) error
 	Delete(name string) error
+	Save(r *model.Role) error
 }
 
 type Engine struct {
@@ -136,6 +137,29 @@ func (e *Engine) Delete(name string) error {
 	defer e.mu.Unlock()
 
 	return e.repo.Delete(name)
+}
+
+func (e *Engine) Save(r *model.Role) error {
+	if r == nil {
+		return errors.New("role is nil")
+	}
+	if r.Name == "" {
+		return ErrInvalidName
+	}
+	if r.MessageMode == "" {
+		r.MessageMode = "interrupt"
+	}
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	now := time.Now()
+	if r.CreatedAt.IsZero() {
+		r.CreatedAt = now
+	}
+	r.UpdatedAt = now
+
+	return e.repo.Save(r)
 }
 
 func (e *Engine) AssemblePrompts(roleName string) ([]string, error) {

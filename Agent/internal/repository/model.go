@@ -98,3 +98,19 @@ func (r *ModelRepo) Delete(name string) error {
 	_, err := r.db.Exec("DELETE FROM models WHERE name = ?", name)
 	return err
 }
+
+func (r *ModelRepo) Save(m *model.Model) error {
+	encryptedKey, err := r.encrypter.Encrypt(m.APIKey)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.Exec(
+		`INSERT INTO models (name, model, base_url, api_key, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(name) DO UPDATE SET
+		   model=excluded.model, base_url=excluded.base_url,
+		   api_key=excluded.api_key, updated_at=excluded.updated_at`,
+		m.Name, m.Model, m.BaseURL, encryptedKey, m.CreatedAt.Format(time.RFC3339), m.UpdatedAt.Format(time.RFC3339),
+	)
+	return err
+}

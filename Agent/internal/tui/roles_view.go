@@ -11,20 +11,27 @@ import (
 )
 
 type rolesViewModel struct {
-	ctx        *AppContext
-	width      int
-	height     int
-	items      []datamodel.Role
-	cursor     int
-	form       *formModel
-	selector   *selectorModel
-	detailMode bool
+	ctx              *AppContext
+	width            int
+	height           int
+	items            []datamodel.Role
+	cursor           int
+	form             *formModel
+	selector         *selectorModel
+	conflictResolver *conflictResolverModel
+	detailMode       bool
 
-	importItems []datamodel.Role
+	importItems   []datamodel.Role
+	pendingImport []datamodel.Role
 }
 
 func newRolesViewModel(ctx *AppContext) *rolesViewModel {
-	return &rolesViewModel{ctx: ctx, form: newFormModel(), selector: newSelectorModel()}
+	return &rolesViewModel{
+		ctx:              ctx,
+		form:             newFormModel(),
+		selector:         newSelectorModel(),
+		conflictResolver: newConflictResolverModel(),
+	}
 }
 
 func (v *rolesViewModel) setSize(w, h int) {
@@ -49,6 +56,18 @@ func (v *rolesViewModel) Update(msg tea.Msg) tea.Cmd {
 			}
 		}
 	case tea.KeyMsg:
+
+		if v.conflictResolver.IsActive() {
+			done, cancelled := v.conflictResolver.Update(msg)
+			if cancelled {
+				v.pendingImport = nil
+				return nil
+			}
+			if done {
+				return v.executeRoleImport()
+			}
+			return nil
+		}
 
 		if v.form.IsActive() {
 			done, cancelled := v.form.Update(msg)
@@ -151,7 +170,7 @@ func (v *rolesViewModel) Update(msg tea.Msg) tea.Cmd {
 				return func() tea.Msg { return statusMsg("Scan import failed: " + err.Error()) }
 			}
 			if len(items) == 0 {
-				return func() tea.Msg { return statusMsg("No role files found in Input/Roles") }
+				return func() tea.Msg { return statusMsg("No role files found in Import/Roles") }
 			}
 			v.importItems = items
 			var names []string
@@ -197,12 +216,103 @@ func (v *rolesViewModel) handleSelectorDone() tea.Cmd {
 		v.importItems = nil
 		return func() tea.Msg { return statusMsg("RoleEngine not available") }
 	}
-	var imported int
+
+	var toImport []datamodel.Role
 	for _, idx := range selected {
-		if idx < 0 || idx >= len(v.importItems) {
-			continue
+		if idx >= 0 && idx < len(v.importItems) {
+			toImport = append(toImport, v.importItems[idx])
 		}
-		r := v.importItems[idx]
+	}
+
+	conflicts := v.detectRoleConflicts(toImport)
+	if len(conflicts) > 0 {
+		v.pendingImport = toImport
+		existingNames := v.buildRoleNameSet()
+		v.conflictResolver.start("Role Import Conflicts", conflicts, existingNames)
+		return nil
+	}
+
+	return v.doImportRoles(toImport)
+}
+
+func (v *rolesViewModel) detectRoleConflicts(toImport []datamodel.Role) []*conflictEntry {
+	existing := make(map[string]datamodel.Role)
+	for _, r := range v.items {
+		existing[r.Name] = r
+	}
+
+	var conflicts []*conflictEntry
+	for _, r := range toImport {
+		if ex, ok := existing[r.Name]; ok {
+			info := fmt.Sprintf("role, model: %s", ex.Model)
+			conflicts = append(conflicts, &conflictEntry{
+				Name:         r.Name,
+				ResourceType: "role",
+				ExistingInfo: info,
+			})
+		}
+	}
+	return conflicts
+}
+
+func (v *rolesViewModel) buildRoleNameSet() map[string]bool {
+	names := make(map[string]bool)
+	for _, r := range v.items {
+		names[r.Name] = true
+	}
+	return names
+}
+
+func (v *rolesViewModel) executeRoleImport() tea.Cmd {
+	resolved := v.conflictResolver.GetResolved()
+	v.conflictResolver.cancel()
+
+	toImport := v.pendingImport
+	v.pendingImport = nil
+	v.importItems = nil
+
+	var imported, overwritten, renamed, skipped int
+	for _, r := range toImport {
+		if entry, ok := resolved[r.Name]; ok {
+			switch entry.Action {
+			case conflictSkip:
+				skipped++
+				continue
+			case conflictOverwrite:
+				if err := v.ctx.RoleEngine.Save(&r); err != nil {
+					skipped++
+					continue
+				}
+				overwritten++
+			case conflictRename:
+				r.Name = entry.NewName
+				if err := v.ctx.RoleEngine.Create(&r); err != nil {
+					skipped++
+					continue
+				}
+				renamed++
+			}
+		} else {
+			if err := v.ctx.RoleEngine.Create(&r); err != nil {
+				skipped++
+				continue
+			}
+			imported++
+		}
+	}
+
+	if list, err := v.ctx.RoleEngine.List(); err == nil {
+		v.items = list
+	}
+
+	return func() tea.Msg {
+		return statusMsg(buildImportStatus("role", imported, overwritten, renamed, skipped))
+	}
+}
+
+func (v *rolesViewModel) doImportRoles(toImport []datamodel.Role) tea.Cmd {
+	var imported int
+	for _, r := range toImport {
 		if err := v.ctx.RoleEngine.Create(&r); err != nil {
 			continue
 		}
@@ -373,6 +483,10 @@ func (v *rolesViewModel) handleFormDone() tea.Cmd {
 }
 
 func (v *rolesViewModel) View() string {
+
+	if v.conflictResolver.IsActive() {
+		return v.conflictResolver.View()
+	}
 
 	if v.selector.IsActive() {
 		return v.selector.View()

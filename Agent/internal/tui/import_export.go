@@ -16,8 +16,8 @@ func importExportDirs() (inputDir, outputDir string) {
 	if err != nil {
 		home = "."
 	}
-	inputDir = filepath.Join(home, ".tac", "Agent", "Input")
-	outputDir = filepath.Join(home, ".tac", "Agent", "Output")
+	inputDir = filepath.Join(home, ".tac", "Agent", "Import")
+	outputDir = filepath.Join(home, ".tac", "Agent", "Export")
 	return
 }
 
@@ -263,6 +263,27 @@ type ImportToolEntry struct {
 	Config    ToolExportData
 	ToolDir   string
 	ScriptDir string
+}
+
+func buildImportStatus(resourceType string, imported, overwritten, renamed, skipped int) string {
+	var parts []string
+	if imported > 0 {
+		parts = append(parts, fmt.Sprintf("%d new", imported))
+	}
+	if overwritten > 0 {
+		parts = append(parts, fmt.Sprintf("%d overwritten", overwritten))
+	}
+	if renamed > 0 {
+		parts = append(parts, fmt.Sprintf("%d renamed", renamed))
+	}
+	if skipped > 0 {
+		parts = append(parts, fmt.Sprintf("%d skipped", skipped))
+	}
+	total := imported + overwritten + renamed
+	if len(parts) == 0 {
+		return fmt.Sprintf("Imported %d %s(s)", total, resourceType)
+	}
+	return fmt.Sprintf("Imported %d %s(s) (%s)", total, resourceType, strings.Join(parts, ", "))
 }
 
 func scanImportTools() ([]ImportToolEntry, error) {

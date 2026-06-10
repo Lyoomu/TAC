@@ -134,3 +134,23 @@ func (r *RoleRepo) Delete(name string) error {
 	_, err := r.db.Exec("DELETE FROM roles WHERE name = ?", name)
 	return err
 }
+
+func (r *RoleRepo) Save(role *model.Role) error {
+	componentsJSON, _ := json.Marshal(role.Components)
+	toolsJSON, _ := json.Marshal(role.Tools)
+	envJSON, _ := json.Marshal(role.Env)
+	needsJSON, _ := json.Marshal(role.Needs)
+	_, err := r.db.Exec(
+		`INSERT INTO roles (name, description, components, tools, env, needs, api_type, message_mode, model, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(name) DO UPDATE SET
+		   description=excluded.description, components=excluded.components,
+		   tools=excluded.tools, env=excluded.env, needs=excluded.needs,
+		   api_type=excluded.api_type, message_mode=excluded.message_mode,
+		   model=excluded.model, updated_at=excluded.updated_at`,
+		role.Name, role.Description, string(componentsJSON), string(toolsJSON), string(envJSON), string(needsJSON),
+		string(role.APIType), role.MessageMode, role.Model,
+		role.CreatedAt.Format(time.RFC3339), role.UpdatedAt.Format(time.RFC3339),
+	)
+	return err
+}
