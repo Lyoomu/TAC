@@ -53,6 +53,8 @@ func (ex *Executor) GetActiveSession(serverName, roleName, sessionID string) *Ac
 
 func (ex *Executor) Execute(ev *model.Event, triggerID string) error {
 
+	_ = ex.serverEngine.Load()
+
 	roleKey := ev.RoleKey
 
 	var serverDisplayName, roleName string
