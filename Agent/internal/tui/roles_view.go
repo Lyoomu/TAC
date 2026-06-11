@@ -118,6 +118,11 @@ func (v *rolesViewModel) Update(msg tea.Msg) tea.Cmd {
 			v.form.startCreate("Create Role", []formField{
 				{label: "Name", placeholder: "unique role name", required: true},
 				{label: "Description", placeholder: "role description", required: false},
+				{label: "API Type", required: true, options: []string{
+					string(datamodel.APITypeChatCompletion),
+					string(datamodel.APITypeResponses),
+					string(datamodel.APITypeAnthropic),
+				}},
 				{label: "Components", multiSelect: true, multiSelectItems: compNames},
 				{label: "Tools", multiSelect: true, multiSelectItems: toolNames},
 				{label: "Message Mode", required: false, options: []string{
@@ -133,11 +138,20 @@ func (v *rolesViewModel) Update(msg tea.Msg) tea.Cmd {
 				if mode == "" {
 					mode = "interrupt"
 				}
+				apiType := string(r.APIType)
+				if apiType == "" {
+					apiType = string(datamodel.APITypeChatCompletion)
+				}
 				compNames := v.getComponentNames()
 				toolNames := v.getToolNames()
 				modelNames := v.getModelNames()
 				v.form.startEdit("Edit Role: "+r.Name, []formField{
 					{label: "Description", placeholder: "role description", value: r.Description, required: false},
+					{label: "API Type", value: apiType, required: true, options: []string{
+						string(datamodel.APITypeChatCompletion),
+						string(datamodel.APITypeResponses),
+						string(datamodel.APITypeAnthropic),
+					}},
 					{label: "Components", multiSelect: true, multiSelectItems: compNames, value: strings.Join(r.Components, ",")},
 					{label: "Tools", multiSelect: true, multiSelectItems: toolNames, value: strings.Join(r.Tools, ",")},
 					{label: "Message Mode", value: mode, required: false, options: []string{
@@ -369,8 +383,8 @@ func (v *rolesViewModel) handleFormDone() tea.Cmd {
 		}
 
 		var comps []string
-		if vals[2] != "" {
-			for _, c := range strings.Split(vals[2], ",") {
+		if vals[3] != "" {
+			for _, c := range strings.Split(vals[3], ",") {
 				c = strings.TrimSpace(c)
 				if c != "" {
 					comps = append(comps, c)
@@ -379,8 +393,8 @@ func (v *rolesViewModel) handleFormDone() tea.Cmd {
 		}
 
 		var tools []string
-		if vals[3] != "" {
-			for _, t := range strings.Split(vals[3], ",") {
+		if vals[4] != "" {
+			for _, t := range strings.Split(vals[4], ",") {
 				t = strings.TrimSpace(t)
 				if t != "" {
 					tools = append(tools, t)
@@ -388,7 +402,7 @@ func (v *rolesViewModel) handleFormDone() tea.Cmd {
 			}
 		}
 
-		msgMode := vals[4]
+		msgMode := vals[5]
 		if msgMode == "" {
 			msgMode = "interrupt"
 		}
@@ -396,10 +410,11 @@ func (v *rolesViewModel) handleFormDone() tea.Cmd {
 		r := &datamodel.Role{
 			Name:        vals[0],
 			Description: vals[1],
+			APIType:     datamodel.APIType(vals[2]),
 			Components:  comps,
 			Tools:       tools,
 			MessageMode: msgMode,
-			Model:       vals[5],
+			Model:       vals[6],
 		}
 		if err := v.ctx.RoleEngine.Create(r); err != nil {
 			return func() tea.Msg { return statusMsg("Create failed: " + err.Error()) }
@@ -429,8 +444,8 @@ func (v *rolesViewModel) handleFormDone() tea.Cmd {
 	name := v.items[v.cursor].Name
 
 	var comps []string
-	if vals[1] != "" {
-		for _, c := range strings.Split(vals[1], ",") {
+	if vals[2] != "" {
+		for _, c := range strings.Split(vals[2], ",") {
 			c = strings.TrimSpace(c)
 			if c != "" {
 				comps = append(comps, c)
@@ -439,8 +454,8 @@ func (v *rolesViewModel) handleFormDone() tea.Cmd {
 	}
 
 	var tools []string
-	if vals[2] != "" {
-		for _, t := range strings.Split(vals[2], ",") {
+	if vals[3] != "" {
+		for _, t := range strings.Split(vals[3], ",") {
 			t = strings.TrimSpace(t)
 			if t != "" {
 				tools = append(tools, t)
@@ -450,10 +465,11 @@ func (v *rolesViewModel) handleFormDone() tea.Cmd {
 
 	updates := &datamodel.Role{
 		Description: vals[0],
+		APIType:     datamodel.APIType(vals[1]),
 		Components:  comps,
 		Tools:       tools,
-		MessageMode: vals[3],
-		Model:       vals[4],
+		MessageMode: vals[4],
+		Model:       vals[5],
 	}
 	if err := v.ctx.RoleEngine.Update(name, updates); err != nil {
 		return func() tea.Msg { return statusMsg("Update failed: " + err.Error()) }
@@ -462,6 +478,9 @@ func (v *rolesViewModel) handleFormDone() tea.Cmd {
 	if v.cursor < len(v.items) {
 		if updates.Description != "" {
 			v.items[v.cursor].Description = updates.Description
+		}
+		if updates.APIType != "" {
+			v.items[v.cursor].APIType = updates.APIType
 		}
 		if updates.Components != nil {
 			v.items[v.cursor].Components = updates.Components
@@ -506,7 +525,7 @@ func (v *rolesViewModel) View() string {
 		return b.String()
 	}
 
-	header := fmt.Sprintf("  %-18s %-12s %-18s %-20s %-20s", "NAME", "MODE", "MODEL", "COMPONENTS", "TOOLS")
+	header := fmt.Sprintf("  %-18s %-14s %-12s %-18s %-20s %-20s", "NAME", "API_TYPE", "MODE", "MODEL", "COMPONENTS", "TOOLS")
 	b.WriteString(tableHeaderStyle.Render(header))
 	b.WriteString("\n")
 
@@ -521,8 +540,12 @@ func (v *rolesViewModel) View() string {
 		if modelName == "" {
 			modelName = "(none)"
 		}
-		row := fmt.Sprintf("  %-18s %-12s %-18s %-20s %-20s",
-			truncate(r.Name, 18), truncate(mode, 12), truncate(modelName, 18), comps, tools)
+		apiType := string(r.APIType)
+		if apiType == "" {
+			apiType = string(datamodel.APITypeChatCompletion)
+		}
+		row := fmt.Sprintf("  %-18s %-14s %-12s %-18s %-20s %-20s",
+			truncate(r.Name, 18), truncate(apiType, 14), truncate(mode, 12), truncate(modelName, 18), comps, tools)
 		if i == v.cursor {
 			b.WriteString(tableSelectedStyle.Render(row))
 		} else {
@@ -537,6 +560,8 @@ func (v *rolesViewModel) View() string {
 		b.WriteString(subtitleStyle.Render("  Role Details"))
 		b.WriteString("\n")
 		b.WriteString(valueStyle.Render(fmt.Sprintf("  Name:       %s", r.Name)))
+		b.WriteString("\n")
+		b.WriteString(valueStyle.Render(fmt.Sprintf("  API Type:   %s", r.APIType)))
 		b.WriteString("\n")
 		b.WriteString(valueStyle.Render(fmt.Sprintf("  Mode:       %s", r.MessageMode)))
 		b.WriteString("\n")

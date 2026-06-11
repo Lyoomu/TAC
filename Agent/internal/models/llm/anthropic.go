@@ -286,8 +286,8 @@ func (c *AnthropicClient) messagesToAnthropic(messages []Message) (string, []Ant
 				systemParts = append(systemParts, text)
 			}
 
-		case "user":
-			if msg.ToolCallID != "" {
+		case "user", "tool":
+			if msg.Role == "tool" || msg.ToolCallID != "" {
 
 				result, _ := c.extractText(msg.Content)
 				anthropicMessages = append(anthropicMessages, AnthropicMessage{
