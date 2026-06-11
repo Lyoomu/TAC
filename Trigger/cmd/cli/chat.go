@@ -140,7 +140,13 @@ var chatCmd = &cobra.Command{
 							errJSON, _ := json.Marshal(map[string]string{"error": "tool not loaded: " + resp.ToolName})
 							result = string(errJSON)
 						} else {
-							res, err := tool.Execute(toolInfo, resp.ToolArguments)
+							workDir := ""
+						if err := initWorkspaceEngine(); err == nil {
+							if ws, err := wsEngine.GetActive(); err == nil {
+								workDir = ws.Path
+							}
+						}
+						res, err := tool.Execute(toolInfo, resp.ToolArguments, workDir)
 							if err != nil {
 								errJSON, _ := json.Marshal(map[string]string{"error": err.Error()})
 								result = string(errJSON)

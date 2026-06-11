@@ -64,7 +64,7 @@ func SaveFiles(serverName, toolName string, files map[string][]byte) (string, er
 	return toolDir, nil
 }
 
-func Execute(info model.ToolInfo, args string) (string, error) {
+func Execute(info model.ToolInfo, args string, workDir string) (string, error) {
 	if info.LocalPath == "" {
 		return "", fmt.Errorf("tool %s is not downloaded", info.Name)
 	}
@@ -102,7 +102,11 @@ func Execute(info model.ToolInfo, args string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, cmdName, cmdArgs...)
-	cmd.Dir = info.LocalPath
+	if workDir != "" {
+		cmd.Dir = workDir
+	} else {
+		cmd.Dir = info.LocalPath
+	}
 	cmd.Stdin = strings.NewReader(args)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

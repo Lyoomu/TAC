@@ -59,7 +59,7 @@ func NewServer() (*Server, error) {
 	serverEngine := srv.NewEngine()
 	_ = serverEngine.Load()
 	sessionMgr := sess.NewManager()
-	executor := trigger.NewExecutor(serverEngine, sessionMgr, te, ws.Path)
+	executor := trigger.NewExecutor(serverEngine, sessionMgr, te)
 
 	return &Server{
 		configPath:    configPath,

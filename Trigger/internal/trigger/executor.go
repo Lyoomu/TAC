@@ -20,18 +20,16 @@ type Executor struct {
 	serverEngine  *srv.Engine
 	sessionMgr    *sess.Manager
 	triggerEngine *Engine
-	basePath      string // workspace 磁盘路径，用于解析文件绑定
 
 	activeMu sync.RWMutex
 	active   map[string]*ActiveSession // key = ServerName-RoleName-SessionID
 }
 
-func NewExecutor(serverEngine *srv.Engine, sessionMgr *sess.Manager, triggerEngine *Engine, basePath string) *Executor {
+func NewExecutor(serverEngine *srv.Engine, sessionMgr *sess.Manager, triggerEngine *Engine) *Executor {
 	return &Executor{
 		serverEngine:  serverEngine,
 		sessionMgr:    sessionMgr,
 		triggerEngine: triggerEngine,
-		basePath:      basePath,
 		active:        make(map[string]*ActiveSession),
 	}
 }
@@ -90,7 +88,7 @@ func (ex *Executor) Execute(ev *model.Event, triggerID string) error {
 		return fmt.Errorf("env preset: %w", err)
 	}
 
-	env, err := ResolveEnv(mergedEnv, ex.basePath)
+	env, err := ResolveEnv(mergedEnv, ex.triggerEngine.BasePath())
 	if err != nil {
 		return fmt.Errorf("resolve env: %w", err)
 	}
@@ -210,7 +208,7 @@ func (ex *Executor) Execute(ev *model.Event, triggerID string) error {
 				errJSON, _ := json.Marshal(map[string]string{"error": "tool not loaded: " + resp.ToolName})
 				resultStr = string(errJSON)
 			} else {
-				res, err := tool.Execute(toolInfo, resp.ToolArguments)
+				res, err := tool.Execute(toolInfo, resp.ToolArguments, ex.triggerEngine.BasePath())
 				if err != nil {
 					errJSON, _ := json.Marshal(map[string]string{"error": err.Error()})
 					resultStr = string(errJSON)

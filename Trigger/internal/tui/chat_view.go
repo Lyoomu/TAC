@@ -663,7 +663,13 @@ func (c *chatViewModel) executeToolAsync(toolCallID, toolName, toolArgs string) 
 			serverName, roleName := parts[0], parts[1]
 			toolInfo, ok := tool.FindLoadedTool(c.ctx.ServerEngine.GetLoadedRoles(), serverName, roleName, toolName)
 			if ok {
-				res, err := tool.Execute(toolInfo, toolArgs)
+				workDir := ""
+			if c.ctx.WorkspaceEngine != nil {
+				if ws, err := c.ctx.WorkspaceEngine.GetActive(); err == nil {
+					workDir = ws.Path
+				}
+			}
+			res, err := tool.Execute(toolInfo, toolArgs, workDir)
 				if err != nil {
 					errJSON, _ := json.Marshal(map[string]string{"error": err.Error()})
 					result = string(errJSON)
