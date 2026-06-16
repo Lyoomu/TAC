@@ -121,7 +121,6 @@ Commands:
   Enter              View details
 
 %s
-  r                  Refresh tool list
   Enter              Toggle detail view
 
 %s

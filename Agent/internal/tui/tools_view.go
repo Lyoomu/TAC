@@ -90,13 +90,6 @@ func (v *toolsViewModel) Update(msg tea.Msg) tea.Cmd {
 				v.cursor++
 			}
 			v.detailMode = false
-		case "r":
-
-			if v.ctx.ToolEngine != nil {
-				_ = v.ctx.ToolEngine.Register()
-				v.items = v.ctx.ToolEngine.List()
-			}
-			v.detailMode = false
 		case "d", "D":
 			if v.cursor < len(v.items) && v.ctx.ToolEngine != nil {
 				name := v.items[v.cursor].Name
@@ -381,7 +374,7 @@ func (v *toolsViewModel) View() string {
 		b.WriteString("\n\n")
 		b.WriteString(hintStyle.Render("  [Enter/Esc] Close details"))
 	} else {
-		b.WriteString(hintStyle.Render("  [↑/↓] Navigate  [r] Refresh  [Enter] Details  [d] Delete  [i] Import  [o] Export"))
+		b.WriteString(hintStyle.Render("  [↑/↓] Navigate  [Enter] Details  [d] Delete  [i] Import  [o] Export"))
 	}
 
 	return b.String()
