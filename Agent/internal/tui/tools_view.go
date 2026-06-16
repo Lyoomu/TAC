@@ -97,6 +97,24 @@ func (v *toolsViewModel) Update(msg tea.Msg) tea.Cmd {
 				v.items = v.ctx.ToolEngine.List()
 			}
 			v.detailMode = false
+		case "d", "D":
+			if v.cursor < len(v.items) && v.ctx.ToolEngine != nil {
+				name := v.items[v.cursor].Name
+				if err := v.ctx.ToolEngine.Delete(name); err != nil {
+					return func() tea.Msg { return statusMsg("Delete failed: " + err.Error()) }
+				}
+				if v.ctx.ToolEngine != nil {
+					_ = v.ctx.ToolEngine.Register()
+					v.items = v.ctx.ToolEngine.List()
+				}
+				if v.cursor >= len(v.items) {
+					v.cursor = len(v.items) - 1
+					if v.cursor < 0 {
+						v.cursor = 0
+					}
+				}
+				return func() tea.Msg { return statusMsg("Deleted tool: " + name) }
+			}
 		case "enter":
 			if v.cursor < len(v.items) {
 				v.detailMode = !v.detailMode
@@ -363,7 +381,7 @@ func (v *toolsViewModel) View() string {
 		b.WriteString("\n\n")
 		b.WriteString(hintStyle.Render("  [Enter/Esc] Close details"))
 	} else {
-		b.WriteString(hintStyle.Render("  [↑/↓] Navigate  [r] Refresh  [Enter] Details  [i] Import  [o] Export"))
+		b.WriteString(hintStyle.Render("  [↑/↓] Navigate  [r] Refresh  [Enter] Details  [d] Delete  [i] Import  [o] Export"))
 	}
 
 	return b.String()
